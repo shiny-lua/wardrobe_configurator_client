@@ -1,0 +1,53 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main # Change to your desired branch name
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.19
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build
+        run: |
+          # Set NODE_OPTIONS to increase memory limit
+          NODE_OPTIONS="--max-old-space-size=4096" npm run build
+
+      - name: Set up SSH
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATEKEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 5.9.51.83 >> ~/.ssh/known_hosts
+      - name: Test SSH Connection with Verbose
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -v root@5.9.51.83
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATEKEY }}
+          
+      - name: Deploy Build to Server
+        run: |
+          # Copy the build artifacts to the server using SCP
+          rsync -avz -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./dist/ root@5.9.51.83:/var/www/schrankdesign.net || true
+        continue-on-error: false
+
+      - name: Clean up
+        if: always()
+        run: |
+          # Remove the private key to ensure it's not left on the runner
+          rm -f ~/.ssh/id_rsa
